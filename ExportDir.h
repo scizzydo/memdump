@@ -89,7 +89,7 @@ public:
         using iterator_category = std::bidirectional_iterator_tag;
 
         constexpr Iterator() noexcept :
-            impl_{}
+            index_(NULL), export_dir_(nullptr), impl_{}
         {
         }
 
@@ -139,7 +139,7 @@ public:
 
         Iterator operator--(int) {
             Iterator const iter{ *this };
-            --this;
+            --*this;
             return iter;
         }
 

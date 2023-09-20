@@ -64,11 +64,11 @@ DWORD WINAPI remote_loader(LPVOID lpThreadParameter) {
         while (base_relocation_dir->VirtualAddress && base_relocation_dir->SizeOfBlock) {
             auto const count = base_relocation_dir->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION) / sizeof(WORD);
             auto const list = reinterpret_cast<PWORD>(base_relocation_dir + 1);
-            auto const base_reloction_address = reinterpret_cast<uintptr_t>(our_base) +
+            auto const base_relocation_address = reinterpret_cast<uintptr_t>(our_base) +
                 base_relocation_dir->VirtualAddress;
             // https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#base-relocation-types
             for (auto i = 0; i < count; ++i) {
-                auto const relocation_address = reinterpret_cast<uint16_t*>(base_reloction_address + 
+                auto const relocation_address = reinterpret_cast<uint16_t*>(base_relocation_address +
                     (list[i] & 0xFFFui16));
                 switch (list[i] >> 12) {
                 case IMAGE_REL_BASED_ABSOLUTE:

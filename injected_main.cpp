@@ -154,11 +154,55 @@ void fix_relocations(PVOID base) {
             reinterpret_cast<uintptr_t>(relocations) +
             sizeof(IMAGE_BASE_RELOCATION));
 
+        auto const base_relocation_address = static_cast<uintptr_t>(old_base +
+            relocations->VirtualAddress);
+
         for (auto i = 0; i < block_relocation_count; ++i) {
-            if ((block_entries[i] >> 12) == IMAGE_REL_BASED_DIR64) {
-                auto const p = reinterpret_cast<uintptr_t*>(old_base +
-                    relocations->VirtualAddress + (block_entries[i] & 0xFFF));
-                *p += base_diff;
+            auto const relocation_address = reinterpret_cast<uint16_t*>(base_relocation_address +
+                (block_entries[i] & 0xFFFui16));
+
+            switch (block_entries[i] >> 12) {
+            case IMAGE_REL_BASED_ABSOLUTE:
+                /*
+                * The base relocation is skipped. This type can be used to pad a block.
+                */
+                break;
+            case IMAGE_REL_BASED_HIGH:
+                /*
+                * The base relocation adds the high 16 bits of the difference to the 16-bit field at offset.
+                * The 16-bit field represents the high value of a 32-bit word.
+                */
+                *relocation_address += HIWORD(base_diff);
+                break;
+            case IMAGE_REL_BASED_LOW:
+                /*
+                * The base relocation adds the low 16 bits of the difference to the 16-bit field at offset.
+                * The 16-bit field represents the low half of a 32-bit word.
+                */
+                *relocation_address += LOWORD(base_diff);
+                break;
+            case IMAGE_REL_BASED_HIGHLOW:
+                /*
+                * The base relocation applies all 32 bits of the difference to the 32-bit field at offset.
+                */
+                *reinterpret_cast<uint32_t*>(relocation_address) += static_cast<int32_t>(base_diff);
+                break;
+            case IMAGE_REL_BASED_HIGHADJ:
+                /*
+                * The base relocation adds the high 16 bits of the difference to the 16-bit field at offset.
+                * The 16-bit field represents the high value of a 32-bit word.
+                * The low 16 bits of the 32-bit value are stored in the 16-bit word that follows this base relocation.
+                * This means that this base relocation occupies two slots.
+                *
+                * Used https://chromium.googlesource.com/external/pefile/+/6fbf45c72aed00c5833d088749febd3706ef8212/pefile.py#4628 as reference
+                */
+                *relocation_address = ((*relocation_address << 16) + block_entries[++i] + static_cast<int32_t>(base_diff) & 0xFFFF0000) >> 16;
+                break;
+            case IMAGE_REL_BASED_DIR64:
+                // The base relocation applies the difference to the 64-bit field at offset.
+                *reinterpret_cast<uint64_t*>(relocation_address) += base_diff;
+                break;
+            default: break;
             }
         }
 

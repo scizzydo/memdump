@@ -52,12 +52,11 @@ DWORD WINAPI remote_loader(LPVOID lpThreadParameter) {
     * Capture the difference from the original process base, to the injected
     * process base.
     */ 
-    auto const base_delta = static_cast<int32_t>(
-        reinterpret_cast<intptr_t>(our_base) -
-        static_cast<intptr_t>(nt_headers->OptionalHeader.ImageBase));
+    auto const difference = reinterpret_cast<intptr_t>(our_base) -
+        static_cast<intptr_t>(nt_headers->OptionalHeader.ImageBase);
 
     // If the base_delta is 0, then we don't need to do any relocations
-    if (base_delta != 0) {
+    if (difference != 0) {
         auto base_relocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(
             reinterpret_cast<uint8_t*>(our_base) +
             nt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
@@ -65,13 +64,54 @@ DWORD WINAPI remote_loader(LPVOID lpThreadParameter) {
         while (base_relocation_dir->VirtualAddress && base_relocation_dir->SizeOfBlock) {
             auto const count = base_relocation_dir->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION) / sizeof(WORD);
             auto const list = reinterpret_cast<PWORD>(base_relocation_dir + 1);
+            auto const base_reloction_address = reinterpret_cast<uintptr_t>(our_base) +
+                base_relocation_dir->VirtualAddress;
+            // https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#base-relocation-types
             for (auto i = 0; i < count; ++i) {
-                if (list[i] >> 12 == IMAGE_REL_BASED_DIR64) {
-                    auto const ptr = reinterpret_cast<PDWORD>(
-                        reinterpret_cast<uintptr_t>(our_base) +
-                        base_relocation_dir->VirtualAddress +
-                        (list[i] & 0xFFF));
-                    *ptr += base_delta;
+                auto const relocation_address = reinterpret_cast<uint16_t*>(base_reloction_address + 
+                    (list[i] & 0xFFFui16));
+                switch (list[i] >> 12) {
+                case IMAGE_REL_BASED_ABSOLUTE:
+                    /*
+                    * The base relocation is skipped. This type can be used to pad a block. 
+                    */
+                    break;
+                case IMAGE_REL_BASED_HIGH:
+                    /*
+                    * The base relocation adds the high 16 bits of the difference to the 16-bit field at offset.
+                    * The 16-bit field represents the high value of a 32-bit word. 
+                    */
+                    *relocation_address += HIWORD(difference);
+                    break;
+                case IMAGE_REL_BASED_LOW:
+                    /*
+                    * The base relocation adds the low 16 bits of the difference to the 16-bit field at offset.
+                    * The 16-bit field represents the low half of a 32-bit word.
+                    */
+                    *relocation_address += LOWORD(difference);
+                    break;
+                case IMAGE_REL_BASED_HIGHLOW:
+                    /*
+                    * The base relocation applies all 32 bits of the difference to the 32-bit field at offset.
+                    */
+                    *reinterpret_cast<uint32_t*>(relocation_address) += static_cast<int32_t>(difference);
+                    break;
+                case IMAGE_REL_BASED_HIGHADJ:
+                    /*
+                    * The base relocation adds the high 16 bits of the difference to the 16-bit field at offset.
+                    * The 16-bit field represents the high value of a 32-bit word.
+                    * The low 16 bits of the 32-bit value are stored in the 16-bit word that follows this base relocation.
+                    * This means that this base relocation occupies two slots. 
+                    * 
+                    * Used https://chromium.googlesource.com/external/pefile/+/6fbf45c72aed00c5833d088749febd3706ef8212/pefile.py#4628 as reference
+                    */
+                    *relocation_address = ((*relocation_address << 16) + list[++i] + static_cast<int32_t>(difference) & 0xFFFF0000) >> 16;
+                    break;
+                case IMAGE_REL_BASED_DIR64:
+                    // The base relocation applies the difference to the 64-bit field at offset.
+                    *reinterpret_cast<uint64_t*>(relocation_address) += difference;
+                    break;
+                default: break;
                 }
             }
             base_relocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(

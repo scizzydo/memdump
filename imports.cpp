@@ -222,15 +222,6 @@ public:
 
                 if (e.has_name()) {
                     /*
-                    * If a function doesn't have a name, and is only exported by ordinal
-                    * then we want to set the highest bit to 1 signifying it's to be imported
-                    * by ordinal. Bits 0-15 will then be the ordinal used to import.
-                    */
-                    thunk_data.u1.Ordinal = e.get_ordinal();
-                    thunk_data.u1.Ordinal |= (1ULL << 63);
-                }
-                else {
-                    /*
                     * Export did contain a name and hint, so we're going to set the ordinal
                     * in bits 0-15 followed by the name. Per PE specification, highest bit must
                     * be 0, so just ensuring it is for sanity...
@@ -243,6 +234,15 @@ public:
                     if ((thunk_data.u1.AddressOfData +
                         e.get_name().length() + 1) % 2 != 0)
                         write<uint8_t>(0);
+                }
+                else {
+                    /*
+                    * If a function doesn't have a name, and is only exported by ordinal
+                    * then we want to set the highest bit to 1 signifying it's to be imported
+                    * by ordinal. Bits 0-15 will then be the ordinal used to import.
+                    */
+                    thunk_data.u1.Ordinal = e.get_ordinal();
+                    thunk_data.u1.Ordinal |= (1ULL << 63);
                 }
 
                 logging::info("{:#016x} -> {}!{} (ord: {} hint: {:X})", reinterpret_cast<uintptr_t>(thunk),

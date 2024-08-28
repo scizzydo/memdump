@@ -103,13 +103,18 @@ class ImportTable {
 
         auto const module_name = export_directory.module_name();
 
-        if (!import_dirs.empty() && import_dirs.back().name == module_name)
-            return import_dirs.back();
-
-        for (auto& import_dir : import_dirs) {
-            if (import_dir.name == module_name)
-                throw std::runtime_error("Import directory order failure");
-        }
+        auto import_dir_iter = std::find_if(import_dirs.begin(), import_dirs.end(), [module_name](auto const& entry) {
+            return entry.name == module_name;
+            });
+        if (import_dir_iter != import_dirs.end())
+            return (*import_dir_iter);
+        //if (!import_dirs.empty() && import_dirs.back().name == module_name)
+        //    return import_dirs.back();
+        //
+        //for (auto& import_dir : import_dirs) {
+        //    if (import_dir.name == module_name)
+        //        throw std::runtime_error("Import directory order failure");
+        //}
 
         IMAGE_IMPORT_DESCRIPTOR import_descriptor{};
         memset(&import_descriptor, 0, sizeof(import_descriptor));

@@ -23,6 +23,7 @@
 */
 
 #include <Windows.h>
+#include <thread>
 
 #include "misc.h"
 #include "tstream.h"
